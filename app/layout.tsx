@@ -14,7 +14,6 @@ import { Metadata } from 'next'
 const noto_sans_kr = Noto_Sans_KR({
   subsets: ['latin'],
   display: 'swap',
-  variable: '--font-noto-sans-kr',
 })
 
 export const metadata: Metadata = {
@@ -61,7 +60,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html
       lang={siteMetadata.language}
-      className={`${noto_sans_kr.variable} scroll-smooth`}
+      className={`${noto_sans_kr.className} scroll-smooth`}
       suppressHydrationWarning
     >
       <link rel="apple-touch-icon" sizes="76x76" href="/static/favicons/apple-touch-icon.png" />
@@ -77,7 +76,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <ThemeProviders>
           <Analytics analyticsConfig={siteMetadata.analytics as AnalyticsConfig} />
           <SectionContainer>
-            <div className="flex h-screen flex-col justify-between font-sans">
+            <div className="flex h-screen flex-col justify-between">
               <SearchProvider searchConfig={siteMetadata.search as SearchConfig}>
                 <Header />
                 <main className="mb-auto">{children}</main>

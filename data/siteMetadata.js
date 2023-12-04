@@ -6,7 +6,7 @@ const siteMetadata = {
   description: 'Posts about software development issues',
   language: 'ko-kr',
   theme: 'system', // system, dark or light
-  siteUrl: 'https://orchwang-devlog.vercel.app',
+  siteUrl: 'https://blog.orchwang.dev',
   siteRepo: 'https://github.com/orchwang/orchwang-devlog',
   siteLogo: '/static/images/orchwang.png',
   // socialBanner: '/static/images/twitter-card.png',

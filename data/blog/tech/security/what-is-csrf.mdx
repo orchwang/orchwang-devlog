@@ -1,0 +1,16 @@
+---
+title: CSRF 는 무엇인가?
+date: '2023-12-5'
+tags: ['security', 'csrf']
+draft: true
+summary: 평소에는 큰 문제가 되지 않겠지만, 제대로 알고 있지 못하다면 큰일 날 수 있는 것이 보안 취약점 이다. 우선 최근 답변을 제대로 하지 못했던 CSRF 는 취약점 명 이며 방어하기 위한 기술의 집합 이기도 하다. 우선 CSRF 의 개념을 IBM CSRF 문서를 참조해 파헤쳐 보자.
+images: []
+---
+
+# TL;DR
+
+평소에는 큰 문제가 되지 않겠지만, 제대로 알고 있지 못하다면 큰일 날 수 있는 것이 보안 취약점 이다. 우선 최근 답변을 제대로 하지 못했던 CSRF 는 취약점 명 이며 방어하기 위한 기술의 집합 이기도 하다. 우선 CSRF 의 개념을 [IBM CSRF 문서](https://www.ibm.com/docs/ko/sva/10.0.4?topic=configuration-prevention-cross-site-request-forgery-csrf-attacks) 를 참조해 파헤쳐 보자.
+
+# What is CSRF Attack
+
+CSRF 는 Cross-Site Request Forgery 의 약자로 웹사이트가 신뢰하는 사용자로부터 권한 없는 요청을 전송한다. 

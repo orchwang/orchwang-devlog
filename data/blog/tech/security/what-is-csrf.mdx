@@ -1,10 +1,10 @@
 ---
 title: CSRF 는 무엇인가?
-date: '2023-12-5'
+date: '2023-12-6'
 tags: ['security', 'csrf']
-draft: true
+draft: false
 summary: 평소에는 큰 문제가 되지 않겠지만, 제대로 알고 있지 못하다면 큰일 날 수 있는 것이 보안 취약점 이다. 우선 최근 답변을 제대로 하지 못했던 CSRF 는 취약점 명 이며 방어하기 위한 기술의 집합 이기도 하다. 우선 CSRF 의 개념을 IBM CSRF 문서를 참조해 파헤쳐 보자.
-images: []
+images: ['/static/images/post/tech/security/csrf-1.png']
 ---
 
 # TL;DR
@@ -13,5 +13,42 @@ images: []
 
 # What is CSRF Attack
 
-CSRF 는 Cross-Site Request Forgery 의 약자로 웹사이트가 신뢰하는 사용자로부터 권한 없는 요청을 전송한다. 
+CSRF 는 Cross-Site Request Forgery 의 약자로 웹사이트가 신뢰하는 사용자로부터 권한 없는 요청을 전송한다. 과정은 아래 도표와 같다. 
+
+1. 우선 로그인 정보를 가지고 있는 사용자의 브라우저가 필요하다. (ex: Facebook 에 로그인 되어 있는 Chrome)
+2. 해커는 사용자가 가지고 있을 로그인 정보를 이용해 사용자의 보안을 침해하는 동작을 수행하는 스크립트를 준비하여 메일 등을 이용해 유포한다.
+3. 사용자가 해커가 제공한 잘못된 링크를 클릭하여 스크립트가 실행된다.
+4. 해당 스크립트를 통해 사용자가 실행하지 않은 동작들이 수행되고 피해를 입는다.
+
+![CSRF Attack 예시](/static/images/post/tech/security/csrf-1.png)
+
+# How to avoid CSRF Attack?
+
+CSRF Attach 을 방어하는 방법 으로는 크게 2가지를 생각 할 수 있다.
+
+## 비밀 토큰 유효성 검증
+
+보호가 필요한 특정한 요청이 있을 수 있다. 이러한 요청이 도착할 시 서버에서 검증이 가능한 토큰을 포함하도록 하여 유효성을 검사할 수 있다.
+
+- 비밀번호 변경
+- 사용자 정보 변경
+- 기타 보호가 필요한 동작
+
+[Django CSRF Protection](https://docs.djangoproject.com/en/4.2/ref/csrf/) 처럼 프레임워크의 기능을 이용하면 편하다. Django 에서 제시하는 내용을 참조해 보자.
+
+1. 다른 사이트가 알 수 없는 CSRF Cookie 를 발급한다.
+2. `csrfmiddlewaretoken` 값을 담을 hidden form 을 구성하여 사용한다.
+3. 모든 HTTP Request (GET, POST, PUT, PATCH, DELETE)가 CSRF Token 을 포함하도록 한다.
+
+## 레퍼러 유효성 검증
+
+보호가 필요한 서버는 Referrer 의 유효성을 검증해 대응할 수 있다. 이번에도 Django 를 통해 알아보자.
+
+1. CSRF_TRUSTED_ORIGINS 설정을 통해 서버가 신뢰하는 Origin 목록을 특정한다.
+2. CSRF 검증 미들웨어를 준비한다.
+3. HTTP Header 를 통해 Referrer 를 파악해 CSRF_TRUSTED_ORIGINS 목록과 대조하여 일치하지 않는 request 를 접근 제한한다.
+
+## 위 조치들의 한계
+
+Django CSRF Protection 은 아래의 한계점을 제시하고 있다. 서브도메인은 전체 도메인에 대해 cookie 를 설정하고 토큰을 사용할 수 있고 CSRF 방어 조치를 우회할 수 있다. 때문에 사용자에게 서브도메인을 제공하는 행위를 제한해야 한다고 제시한다.
 

@@ -1,9 +1,9 @@
 /** @type {import("pliny/config").PlinyConfig } */
 const siteMetadata = {
-  title: 'OrcHwang`s DevLog',
+  title: 'OrcHwang`s WIKI',
   author: 'OrcHwang',
-  headerTitle: 'Orchwang`s DevLog',
-  description: 'Posts about software development issues',
+  headerTitle: 'Orchwang`s WIKI',
+  description: 'Secondary storage for almost everything I have.',
   language: 'ko-kr',
   theme: 'system', // system, dark or light
   siteUrl: 'https://blog.orchwang.dev',

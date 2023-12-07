@@ -1,0 +1,86 @@
+---
+title: Django gettext 사용 시 동음이의어 처리 방법
+date: '2023-12-7'
+tags: ['django', 'translation']
+draft: false
+summary: Django gettext 사용 시 영어 문장이 동일하다면 `django-admin makemessages` 실행 시 동음동의어로 처리된다. 동음이의어를 제대로 처리하기 위한 방법을 알아본다.
+images: []
+---
+
+# TL;DR
+
+Django gettext 사용 시 영어 문장이 동일하다면 `django-admin makemessages` 실행 시 동음동의어로 처리된다. 동음이의어를 제대로 처리하기 위한 방법을 알아본다. 세가지 정도의 방법이 존재하는 것으로 보인다.
+
+1. Contextual Marker 사용
+2. 고유한 문자열 사용
+3. 커스텀 태그 사용
+
+# 동음이의어를 처리하는 방법
+
+## Contextual Marker
+
+다행히 Django translation 은 이러한 상황을 해결하기 위해 [Contextual Marker](https://docs.djangoproject.com/en/4.2/topics/i18n/translation/#contextual-markers) 를 별도로 제공한다. 아래와 같이 활용한다.
+
+```python
+from django.utils.translation import pgettext
+
+month = pgettext("month name", "May")
+month = pgettext("My friends name", "May")
+```
+
+혹은
+
+
+```python
+from django.db import models
+from django.utils.translation import pgettext_lazy
+
+
+class MyThing(models.Model):
+    name = models.CharField(
+        help_text=pgettext_lazy("help text for MyThing model", "This is the help text")
+    )
+```
+
+위 예시의 경우 .po 파일은 아래와 같이 생성되며 각각 번역을 입력하면 되겠다.
+
+```python
+msgctxt "month name"
+msgid "May"
+msgstr "5월"
+
+msgctxt "My friends name"
+msgid "May"
+msgstr "내 친구 메이"
+````
+
+## 고유한 문자열 사용
+
+적용에 한계가 있겠지만 원문을 구분해 주는 방법도 존재한다.
+
+```python
+# 금융 기관을 나타내는 문구
+finance_institution = gettext("Bank")
+
+# 강둑을 나타내는 문구
+river_bank = gettext("River bank")
+```
+
+## 커스텀 태그 사용
+
+아래와 같이 파라미터 등을 이용해 번역 결과를 제어할 수도 있다.
+
+```python
+from django import template
+from django.utils.translation import gettext as _
+
+register = template.Library()
+
+@register.simple_tag
+def translate_word(word, context):
+    if context == 'finance':
+        return _('Bank (financial institution)')
+    elif context == 'river':
+        return _('Bank (river bank)')
+    return word
+````

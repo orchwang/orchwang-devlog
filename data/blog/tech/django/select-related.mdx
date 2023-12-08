@@ -1,0 +1,83 @@
+---
+title: Django select_related, prefetch_related 의 활용법
+date: '2023-12-8'
+tags: ['django', 'orm']
+draft: false
+summary: SQL 만 사용하다 ORM 을 사용하게 되면 처음에는 깔끔한 모델 정리와, 테이블 생성부터 관리까지 편리한 기능들에 만족하게 된다. 하지만, 조금 복잡한 쿼리가 필요한 경우 ORM 별로 사용법이 달라 찾아보게 된다. 금번 포스트 에서는 특히 헷갈리기 쉬운 `select_related` 와 `prefetch_related` 를 살펴보고자 한다.
+images: []
+---
+
+# TL;DR
+
+SQL 만 사용하다 ORM 을 사용하게 되면 처음에는 깔끔한 모델 정리와, 테이블 생성부터 관리까지 편리한 기능들에 만족하게 된다. 하지만, 조금 복잡한 쿼리가 필요한 경우 ORM 별로 사용법이 달라 찾아보게 된다. 금번 포스트 에서는 특히 헷갈리기 쉬운 `select_related` 와 `prefetch_related` 를 살펴보고자 한다.
+
+# select_related
+
+[Django documentation](https://docs.djangoproject.com/ko/5.0/ref/models/querysets/#select-related) 에서의 원문은 `select_related` 를 아래와 같이 설명하고 있다. 간단하게 요약해 보자면 쿼리 시 Foreign Key 관계에 있는 데이터를 가져올 수 있다는 것이다. Foreign Key 관계의 데이터가 필요할 때 여러번 쿼리할 필요가 없다고 이야기 한다. 사실상 Join 의 활용과 비슷한 이야기 이다.
+
+> Returns a QuerySet that will “follow” foreign-key relationships, selecting additional related-object data when it executes its query. This is a performance booster which results in a single more complex query but means later use of foreign-key relationships won’t require database queries.
+
+예시를 통해 자세히 알아보자. Entry 모델은 Blog 모델과 Foreign Key 관계이다. Entry 모델의 blog 데이터를 불러오기 위해 Entry select 1회, entry queryset 에서 blog 호출 2회 까지 해서 총 두번의 쿼리를 실행하게 된다.
+
+```python
+# Hits the database.
+e = Entry.objects.get(id=5)
+
+# Hits the database again to get the related Blog object.
+b = e.blog`
+```
+
+하지만 `select_related` 를 사용할 경우 get 을 통해 생성된 queryset 을 통해 추가 쿼리 없이 데이터를 얻을 수 있어 성능을 개선할 수 있다. 그렇다면 select_related 는 실제 쿼리로 어떻게 번역될까?
+
+```python
+# Hits the database.
+e = Entry.objects.select_related("blog").get(id=5)
+
+# Doesn't hit the database, because e.blog has been prepopulated
+# in the previous query.
+b = e.blog
+```
+
+위 코드는 Author, Publisher 두 Foreign Key 관계의 모델에서 데이터를 추출하는 예시 이다. authors queryset 을 통해 publisher 의 데이터 까지 추가 쿼리 없이 조회할 수 있다. 
+```python
+authors = Author.objects.select_related('publisher').filter(name='John')
+```
+
+이는 SQL 로 표현하면 아래와 같다. Inner Join 을 사용한 예시 이다.
+
+```sql
+SELECT * FROM author
+INNER JOIN publisher ON author.publisher_id = publisher.id
+WHERE author.name = 'John';
+```
+
+# prefetch_related
+
+`prefetch_related` 는 기본적으로 사용 목적과 용도가 `select_related` 와 유사하다. 용도가 다르기 보다는 연결된 모델이 많아질 경우 쿼리가 범람 (문서에서는 `deluge of database queries`) 되는 상황을 막기 위함이다.
+
+조금 더 구체적으로 살펴보자면, `select_related` 는 SQL 의 JOIN 기반으로 작동한다. 하지만 이 때문에 결과 데이터 수량이 많고, `Many` 관계의 테이블의 경우 방해가 되기도 한다. `select_related` 는 단일 관계(single related) 만 쓰는것이 바람직 하다고 제안한다.
+
+이쯤에서 `prefetch` 의 개념을 짚고 가는게 좋겠다. 사실 prefetch 는 사전에도 등장하지 않는 합성어로 `pre:미리` + `fetch:가져오다` 와 같이 조합된다고 볼 수 있다. 미리 무언가를 가져오는 모든 프로그래밍 영역에 고루 사용되고 있다. Django 에서는 relation 을 미리(pre) 가져오는(fetch) 방식으로 생각되는데, 우선 기능을 더 살펴보자.
+
+`prefetch_related` 는 `select_related` 과 다르게 관계 별로 분리된 참조를 수행한다. 이것은 `select_related` 는 수행할 수 없는 one-to-many, many-to-many, [GenericRelation](https://docs.djangoproject.com/ko/5.0/ref/contrib/contenttypes/#reverse-generic-relations) 등의 연결을 가능하게 한다. 물론 `select_related` 와 같은 기능도 수행할 수 있다. [Generic Foreign Key](https://docs.djangoproject.com/ko/5.0/ref/contrib/contenttypes/#django.contrib.contenttypes.fields.GenericForeignKey) 와의 연결도 가능하다고 하는데, 이는 Django 5.0 의 신 기능이므로 따로 살펴보자.
+
+```python
+from django.db import models
+
+
+class Topping(models.Model):
+    name = models.CharField(max_length=30)
+
+
+class Pizza(models.Model):
+    name = models.CharField(max_length=50)
+    toppings = models.ManyToManyField(Topping)
+
+    def __str__(self):
+        return "%s (%s)" % (
+            self.name,
+            ", ".join(topping.name for topping in self.toppings.all()),
+        )
+```
+
+우선 Model 정의 부터 본다. 

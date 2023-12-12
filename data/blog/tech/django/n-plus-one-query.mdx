@@ -1,0 +1,66 @@
+---
+title: N+1 Query 오류에 대응하는 방법
+date: '2023-12-12'
+tags: ['django', 'orm']
+draft: false
+summary: Sentry Report 로 인지하게 된 오류이다. N+1 Query 는 ORM 사용 시 발생할 수 있는 상황으로 주 증상은 성능 저하 이다. 이 문제의 원인과 발생 과정을 살펴보고 솔루션을 찾아본다.
+images: []
+---
+
+# TL;DR
+
+Sentry Report 로 인지하게 된 오류이다. N+1 Query 는 ORM 사용 시 발생할 수 있는 상황으로 주 증상은 성능 저하 이다. 이 문제의 원인과 발생 과정을 살펴보고 솔루션을 찾아본다.
+
+# 일반적인 발생 과정
+
+1. 부모, 자식 관계를 가지는 두개의 테이블이 존재한다고 가정해 보자. 두 테이블은 Foreign Key 로 연결되어 있을 것이다.
+2. 부모테이블 에서 복수의 데이터를 쿼리 하려 한다.
+3. 이때 각 행별로 자식테이블의 데이터를 추가로 가져오려 한다.
+4. 각 행별로 자식 테이블이 데이터를 별도 쿼리하는 경우 실행되는 쿼리의 수가 많아져 성능 저하를 유발한다.
+
+# Django 에서의 예시
+
+Django 에서의 구현을 예로 들어 설명해 본다. 아래와 같이 두개의 테이블을 ORM Model 로 구현했다. Pizza model 이 부모, Topping model 이 자식 이다.
+
+```python
+from django.db import models
+
+
+class Topping(models.Model):
+    name = models.CharField(max_length=30)
+
+
+class Pizza(models.Model):
+    name = models.CharField(max_length=50)
+    toppings = models.ForeignKey(Topping)
+```
+
+Serializer 를 아래와 같이 구성할 경우 Pizza 목록 1,000개를 가져오려 할때 Topping table 을 1,000번 쿼리하게 된다. 굉장한 비효율 이다.
+
+```python
+class PizzaListSerialzer(serializers.Serializer):
+    email = serializers.CharField()
+    topping_name= serializers.CharField()
+
+    def get_topping_name(self, obj):
+      topping = Topping.objects.get(id=obj.topping)
+      return topping.name
+```
+
+우선 Serializer 에 연결할 QuerySet 은 아래와 같이 작성한다.
+
+```python
+queryset = Pizza.objects.select_related(topping).all()
+```
+
+이후 Serializer 를 아래와 같이 구성하여 Topping 의 name 을 QuerySet 에 구성한다.
+
+
+```python
+class PizzaListSerialzer(serializers.Serializer):
+    email = serializers.CharField()
+    topping_name= serializers.CharField()
+
+    def get_topping_name(self, obj):
+      return obj.topping.name
+```

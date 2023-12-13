@@ -80,4 +80,11 @@ class Pizza(models.Model):
         )
 ```
 
-우선 Model 정의 부터 본다. 
+우선 Model 정의 부터 본다. 위와 같이 Pizza, Topping 모델을 Many2Many 관계로 설정해 주었다. __str__ 는 복수의 Topping 을 나열해 표시하도록 했다. 
+
+```python
+>>> Pizza.objects.all()
+["Hawaiian (ham, pineapple)", "Seafood (prawns, smoked salmon)"...
+```
+
+쿼리 및 결과는 위와 같다. 

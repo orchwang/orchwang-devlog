@@ -1,0 +1,246 @@
+---
+title: Django prefetch_related 의 활용법
+date: '2023-12-15'
+tags: ['django', 'orm']
+draft: false
+summary: prefetch_related 는 기본적으로 사용 목적과 용도가 select_related 와 유사하다. 용도가 다르기 보다는 연결된 모델이 많아질 경우 쿼리가 범람 (문서에서는 deluge of database queries) 되는 상황을 막기 위함이다.
+images: []
+---
+
+# TL;DR
+
+`prefetch_related` 는 기본적으로 사용 목적과 용도가 `select_related` 와 유사하다. 용도가 다르기 보다는 연결된 모델이 많아질 경우 쿼리가 범람 (문서에서는 `deluge of database queries`) 되는 상황을 막기 위함이다.
+
+참고로 본 문서는 분량이 상당히 많기 때문에 다소 rough 하게 작성 후 revise 해나갈 예정이다.
+
+## prefetch_related 의 일반적인 사항
+
+조금 더 구체적으로 살펴보자면, `select_related` 는 SQL 의 JOIN 기반으로 작동한다. 하지만 이 때문에 결과 데이터 수량이 많고, `Many` 관계의 테이블의 경우 방해가 되기도 한다. `select_related` 는 단일 관계(single related) 만 쓰는것이 바람직 하다고 제안한다.
+
+이쯤에서 `prefetch` 의 개념을 짚고 가는게 좋겠다. 사실 prefetch 는 사전에도 등장하지 않는 합성어로 `pre:미리` + `fetch:가져오다` 와 같이 조합된다고 볼 수 있다. 미리 무언가를 가져오는 모든 프로그래밍 영역에 고루 사용되고 있다. Django 에서는 relation 을 미리(pre) 가져오는(fetch) 방식으로 생각되는데, 우선 기능을 더 살펴보자.
+
+`prefetch_related` 는 `select_related` 과 다르게 관계 별로 분리된 참조를 수행한다. 이것은 `select_related` 는 수행할 수 없는 one-to-many, many-to-many, [GenericRelation](https://docs.djangoproject.com/ko/5.0/ref/contrib/contenttypes/#reverse-generic-relations) 등의 연결을 가능하게 한다. 물론 `select_related` 와 같은 기능도 수행할 수 있다. [Generic Foreign Key](https://docs.djangoproject.com/ko/5.0/ref/contrib/contenttypes/#django.contrib.contenttypes.fields.GenericForeignKey) 와의 연결도 가능하다고 하는데, 이는 Django 5.0 의 신 기능이므로 따로 살펴보자.
+
+```python
+from django.db import models
+
+
+class Topping(models.Model):
+    name = models.CharField(max_length=30)
+
+
+class Pizza(models.Model):
+    name = models.CharField(max_length=50)
+    toppings = models.ManyToManyField(Topping)
+
+    def __str__(self):
+        return "%s (%s)" % (
+            self.name,
+            ", ".join(topping.name for topping in self.toppings.all()),
+        )
+```
+
+## 예시 Model 정의
+우선 Model 정의 부터 본다. 위와 같이 Pizza, Topping 모델을 Many2Many 관계로 설정해 주었다. __str__ 는 복수의 Topping 을 나열해 표시하도록 했다. 
+
+```python
+>>> Pizza.objects.all()
+["Hawaiian (ham, pineapple)", "Seafood (prawns, smoked salmon)"...
+```
+
+쿼리 및 결과는 위와 같다. 위 QuerySet 은 매번 데이터베이스 콜을 진행하지 않고 `self.toppings.all()` 을 호출하게 되는데, 이때 하나의 쿼리로 fetch 된 QuerySet cache 에서 데이터를 찾아오게 된다.
+
+prefetch_related 에 추가된 쿼리는 QuerySet 평가 및 기본 쿼리 실행 후 실행되게 된다고 한다. 
+
+### 참고사항
+
+- 위 예시처럼 쿼리 실행 중 변경을 방지하는 메커니즘은 없기 때문에 쿼리 실행 중 변경사항이 발생하면 해당 변경사항이 QuerySet 에 그대로 반영될 수 있다.
+
+  ```python
+  `>>> Pizza.objects.prefetch_related("toppings")
+  #  "Hawaiian" Pizza was deleted in another shell.
+  <QuerySet [<Pizza: Hawaiian ()>, <Pizza: Seafood (prawns, smoked salmon)>]>
+  ```
+
+- Model instance 의 iterable (반복 가능한 객체) 가 있는 경우, [prefetch_related_objects](https://docs.djangoproject.com/ko/5.0/ref/models/querysets/#prefetch-related-objects) 함수를 이용해 관련 속성을 미리 가져올 수 있다.
+- 주의해야할 사항은 주 QuerySet 과 관련 related objects 의 캐시는 각 항목이 실행된 이후 모두 메모리에 로드된다. 이는 일반적인 QuerSet 의 동작을 변경하며 DB 에 Query 된 이후라 할지라도 실행된 모든 객체를 메모리에 로드하지 않으려고 한다는 것이다. 아마 큰 query 등이 모두 메모리에 저장되는 사태를 피하기 위한 것으로 보인다.
+- QuerySet 은 항상 서로 다른 데이터베이스 쿼리를 내포하는 chained 된 쿼리는 기존에 캐시된 결과를 무시하고 새로운 데이터베이스 쿼리의 결과를 받도록 되어 있다. 아래 QuerySet 에서 prefetched 된 `pizza.toppings.all()` 는 무시된다. 대신 `pizza.toppings.filter(spicy=True)` 가 새로이 적용될 것이다.
+
+  ```python
+  >>> pizzas = Pizza.objects.prefetch_related("toppings")
+  >>> [list(pizza.toppings.filter(spicy=True)) for pizza in pizzas]
+  ```
+
+## Join 이 포함된 활용법
+
+또한 일반적인 Join 구문을 활용할 수 있다. 이를 확인하기 위해 추가 모델을 정의해 본다. Pizza model 보다 상위 모델인 Restoraunt 모델 이다. Pizza 모델과 Many2Many 관계를 설정한다.
+
+```python
+class Restaurant(models.Model):
+    pizzas = models.ManyToManyField(Pizza, related_name="restaurants")
+    best_pizza = models.ForeignKey(
+        Pizza, related_name="championed_by", on_delete=models.CASCADE
+    )
+```
+
+아래와 같이 사용될 수 있는데,
+
+```python
+>>> Restaurant.objects.prefetch_related("pizzas__toppings")
+```
+
+이렇게 하면 레스토랑에 속한 모든 피자와 해당 피자에 속한 모든 토핑을 미리 가져오게 된다. 즉 레스토랑, 피자, 토핑까지 해서 총 3개의 데이터베이스 쿼리가 실행된다.
+
+```python
+>>> Restaurant.objects.prefetch_related("best_pizza__toppings")
+```
+
+이렇게 하면 위 구문과 같이 3개의 쿼리를 실행하게 되며 Pizza model 에 대해 best pizza 와 모든 toppings 를 불러오게 된다. best_pizza 는 select_related 로 미리 가져오게 할 수 있으며 이는 쿼리를 2번으로 줄여준다.
+
+```python
+>>> Restaurant.objects.select_related("best_pizza").prefetch_related("best_pizza__toppings")
+```
+
+prefetch 는 메인 쿼리(select_related 에 의한 join 구분 포함) 이후에 실행된다. 이것은 best_pizza 객체가 이미 존재한다는 것을 감지할 수 있으며 다시 실행하지 않도록 해준다.
+
+prefetch_related 호출을 체이닝 하는 것은 미리 가져온 조회(lookups) 를 쌓아올리게 된다. prefetch_related 를 초기화 하기 위해서는 아래와 같이 None 을 파라미터로 통과시켜야 한다.
+
+```python
+>>> non_prefetched = qs.prefetch_related(None)
+```
+
+## prefetch_related 로 생성된 객체의 공유
+
+prefetch_related 로 생성된 객체의 또다른 차이점은 서로 관계가 있는 서로 다른 객체 사이에서 공유가 가능하다는 점이다. 이는 다시말해 단일 Python model instance 는 객체 트리 내에서 어디에든 등장할 수 있다는 뜻이며, 이는 주로 ForeignKey 관계에서 나타난다. 일반적으로 이는 문제가 되지 않으며, 메모리와 CPU 를 절약할 수 있게 된다.
+
+prefetch_related 가 GenericForeignKey 를 미리 실행하는 것을 지원하지만, 이는 쿼리의 데이터 개수에 달렸다. GenericForeignKey 는 복수 테이블의 데이터를 참조할 수 있기 때문에, 테이블 당 한개의 쿼리가 필요하며 모든 항목을 위한 단일 쿼리는 아닌 것이다. 또한 ContenType 테이블의 경우 미리 실행된 적당한 행이 없다면 추가 쿼리가 필요할 수 있다.
+
+prefetch_related 의 거의 모든 케이스에서 SQL Query 는 IN 을 사용하게 된다. 이것은 큰 QuerySet 은 데이터베이스에 따라 큰 IN 구분을 생성할 수 있으며 쿼리 실행 시 퍼포먼스 문제를 야기할 수 있다. 항상 사용할 때 SQL 을 프로파일링 하는 버릇을 들이자.
+
+토한 쿼리 실행을 위해 iterator() 를 사용한다면 prefetch_related 호출은 chunk_size 가 제공됬을 때에만 사용할 수 있다.
+
+## Prefetch 객체의 활용
+
+prefetch 작업의 고급 활용은 Prefetch 객체를 이용하면 된다고 한다. 가장 간단한 활용은 전통적인 아래와 같은 string 기반 활용법 이다.
+
+```python
+>>> from django.db.models import Prefetch
+>>> Restaurant.objects.prefetch_related(Prefetch("pizzas__toppings"))
+```
+
+또한 커스텀 쿼리셋은 부가 쿼리셋과 함께 제공할 수 있다. 이것은 쿼리셋의 기본 정렬을 바꾸고자 할 때 사용된다.
+
+```python
+>>> Restaurant.objects.prefetch_related(
+...     Prefetch("pizzas__toppings", queryset=Toppings.objects.order_by("name"))
+... )
+```
+
+또는 select_related 를 호출해 쿼리수를 줄여볼 수 있다.
+
+```python
+>>> Pizza.objects.prefetch_related(
+...     Prefetch("restaurants", queryset=Restaurant.objects.select_related("best_pizza"))
+... )
+```
+
+prefetched 된 결과에 custom attribute 를 `to_attr` argument 와 함께 적용해 사용할 수 있다. 결과는 바로 리스트에 저장된다. 이것은 동일한 관계를 여러번 prefetch 하여 다른 결과를 추출할 수 있다. 예시는 아래와 같다.
+
+```python
+>>> vegetarian_pizzas = Pizza.objects.filter(vegetarian=True)
+>>> Restaurant.objects.prefetch_related(
+...     Prefetch("pizzas", to_attr="menu"),
+...     Prefetch("pizzas", queryset=vegetarian_pizzas, to_attr="vegetarian_menu"),
+... )
+```
+
+`to_attr` argument 에 의해 생성된 조회(lookup) 은 통상 다른 다른 조회에 의해 횡단(?) 될 수 있다.
+
+```python
+>>> vegetarian_pizzas = Pizza.objects.filter(vegetarian=True)
+>>> Restaurant.objects.prefetch_related(
+...     Prefetch("pizzas", queryset=vegetarian_pizzas, to_attr="vegetarian_menu"),
+...     "vegetarian_menu__toppings",
+... )
+```
+
+`to_attr` 은 prefetch 결과를 필터링하기 위해 추천된다. 이는 related manager (prefetch_related, select_related 관련 매니저를 이야기 하는 듯 하다.) 의 캐시 내부 필터링된 결과를 저장하는 것 보다 덜 모호하다.
+
+```python
+>>> queryset = Pizza.objects.filter(vegetarian=True)
+>>>
+>>> # Recommended:
+>>> restaurants = Restaurant.objects.prefetch_related(
+...     Prefetch("pizzas", queryset=queryset, to_attr="vegetarian_pizzas")
+... )
+>>> vegetarian_pizzas = restaurants[0].vegetarian_pizzas
+>>>
+>>> # Not recommended:
+>>> restaurants = Restaurant.objects.prefetch_related(
+...     Prefetch("pizzas", queryset=queryset),
+... )
+>>> vegetarian_pizzas = restaurants[0].pizzas.all()
+```
+커스텀 prefetch 는 ForeignKey 나 OneToOneField 같은 단일 관계에서 작동한다. 일반적으로 이러한 관계에서 select_related 를 사용하게 되지만 몇몇 상황에서는 prefetch 가 더 유용한 경우가 있다. 주로 아래와 같은 경우가 되겠다.
+
+- 관련된 모델에 추가로 prefetch 를 수행하는 QuerSet 을 사용할 때.
+- 관계 객체 중 일부만 prefetch 할 때.
+- `지연 필드(deferred fields)` 같은 성능 최적화 기술을 사용하려고 할 때.
+
+```python
+>>> queryset = Pizza.objects.only("name")
+>>>
+>>> restaurants = Restaurant.objects.prefetch_related(
+...     Prefetch("best_pizza", queryset=queryset)
+... )
+```
+
+다중 데이터베이스를 이용한다면 prefetch 는 내 선택을 존중하게 된다. 내부 쿼리에 데이터베이스를 선택하지 않으면 외부 쿼리에서 선택한 데이터베이스 를 사용하게 된다.
+
+```python
+>>> # Both inner and outer queries will use the 'replica' database
+>>> Restaurant.objects.prefetch_related("pizzas__toppings").using("replica")
+>>> Restaurant.objects.prefetch_related(
+...     Prefetch("pizzas__toppings"),
+... ).using("replica")
+>>>
+>>> # Inner will use the 'replica' database; outer will use 'default' database
+>>> Restaurant.objects.prefetch_related(
+...     Prefetch("pizzas__toppings", queryset=Toppings.objects.using("replica")),
+... )
+>>>
+>>> # Inner will use 'replica' database; outer will use 'cold-storage' database
+>>> Restaurant.objects.prefetch_related(
+...     Prefetch("pizzas__toppings", queryset=Toppings.objects.using("replica")),
+... ).using("cold-storage")
+```
+
+### 참고사항
+
+Ordering 관련 사항이다. 아래 커맨드를 참조해 보자.
+
+```python
+>>> prefetch_related("pizzas__toppings", "pizzas")
+```
+
+위 작업은 정렬되지 않은 상태인데 이는 `pizzas__toppings` 이 이미 모든 필요한 정보를 가지고 있기 때문이다. 때문에 두번째 인자인 `pizzas` 는 다소 상황에 맞지 않는다.
+
+```python
+>>> prefetch_related("pizzas__toppings", Prefetch("pizzas", queryset=Pizza.objects.all()))
+```
+
+위 작업은 ValueError 를 유발하기 때문에 QuerySet 의 이전 조회를 재정의 할수밖에 없다. `pizzas__toppings` 조회의 읿부로 `pizzas` 를 횡단하기 우해 암시적 쿼리셋(?) 이 생성되었다.
+
+```python
+>>> prefetch_related("pizza_list__toppings", Prefetch("pizzas", to_attr="pizza_list"))
+```
+
+위 작업은 AttributeError 를 유발하는데, `pizzaa_list__toppings` 는 이미 처리되었으며 `pizza_list` 가 존재하지 않기 때문이다.
+
+이러한 고려사항은 Prefetch 객체의 사용에만 국한되지 않는다. 일부 고급 테크닉을 사용할 때에는 특정한 순서대로 사용해야 하며 prefetch_related 의 인자를 주의깊게 정렬해야 한다.
+
+# 정리
+
+`prefetch_related` 는 다양한 기능을 제공하며 단순 SQL 의 기능을 넘어 프로그래밍 기법이 더해져 다양한 상황에서 최적의 쿼리를 할 수 있게 해준다. 하지만 작성하면서 절실히 느낀것은 "이 많은 옵션들을 실무에서 어떻게 써야 할까?" 라는 생각이다. 결국 모든 기능을 실제로 실행해 보고 활용사례도 고민해봐야 할 것으로 보인다. 언제 다 해보지? 라는 생각이 저절로 든다.
+
+하지만 안하는것 보다는 낫다고, 하나씩 쌓아가다 보면 지금보다는 나아지는 나 자신이 되리라 확신한다. 이제 Django 테스트 환경을 마련하고 실제 실험을 해보도록 하자. 본 포스트는 나의 이해도가 개선될 때 마다 업데이트 예정이다.

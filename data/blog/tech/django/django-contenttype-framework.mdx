@@ -1,0 +1,74 @@
+---
+title: Django contenttypes Framework, Generic Relation 살펴보기
+date: '2024-3-11'
+tags: ['django', 'contenttypes']
+draft: true
+summary: 
+images: []
+---
+
+# TL;DR
+
+> Django includes a contenttypes application that can track all of the models installed in your Django-powered project, providing a high-level, generic interface for working with your models.
+
+Django 는 우리의 Django project 에 설치된 모든 모델을 추적할 수 있는 contenttypes 라는 고수준, 일반 인터페이스를 제공하는 어플래케이션이 포함한다. 그 핵심에는 `django.contrib.contenttypes.models.ContentType` 모델이 존재하는데 이는 우리 프로젝트에 설치된 모델에 대한 정보를 저장한다. 새로운 모델이 설치되면 새로운 ContentType 모델 레코드 또한 생성된다.
+
+ContentType 모델의 instance 는 그들을 나타내는 모델 클래스와 쿼리 객체를 리턴하는 메소드를 가진다. ContentType 은 또한 ContentType 과 함께 작동하고 특정 모델을 위해 ContentType 의 인스턴스를 획득하는 custom manager 를 가진다.
+
+우리가 생성한 모델과 ContentType 같 관계는 또한 우리의 모델과 그 어떤 모델 인스턴스 간 'generic' 관계로 활용될 수 있다.
+
+# Installing contenttypes framework
+
+아래와 같이 settings.py 의 INSTALLED_APPS 에 정의해 사용할 수 있다.
+
+```
+INSTALLED_APPS = [
+    ...
+    'django.contrib.contenttypes',
+    ...
+]
+```
+
+# The ContentType Model
+
+ContentType 의 모든 instance 들은 함께 유니크 하게 기재된 모델에 해다오디는 두개의 필드를 가진다.
+
+- app_label
+  - 모델이 속해있는 app 의 이름이다. app_label 에서 가져와 저장되며 import path 의 마지막 부분으로 정의된다. 예를 들면 `django.contrib.contenttypes` 에서 `contenttypes` 만 가져온다.
+
+- model
+  - 모델 클래스 명
+
+추가적으로 아래의 항목이 가능하다.
+
+- name
+  - 사람이 읽을 수 있는 content type. 모델 attribute 중 `verbose_name` 을 가져온다. verbose 는 `장황한` 이라는 뜻인데, 직관적으로 이해가 가능한 수준으로 설명한 이라는 뜻일 것이라 생각된다.
+
+# Generic Relation
+
+Content Type 에 대해 어느정도 이해했으니, 이제 [Generic Relation](https://docs.djangoproject.com/en/5.0/ref/contrib/contenttypes/#generic-relations) 을 살펴볼 때가 왔다.
+
+다른 모델에서 ContentType 모델로 foreign key 를 추가하는 것은 추가한 아래에 제시된 Permission model 의 예시와 같이 모델로 하여금 다른 모델과 효과적으로 묶일수 있도록 해준다. 하지만 한걸음 더 나아가게 하고 ContentType 모델을 사용하는 것은 진정으로 generic(때로는 "polymorphic" 이라고도 불린다.) 한 관계를 가능하게 한다. 
+
+Tagging system 에서의 예시는 아래와 같다.
+
+```python
+from django.contrib.contenttypes.fields import GenericForeignKey
+from django.contrib.contenttypes.models import ContentType
+from django.db import models
+
+
+class TaggedItem(models.Model):
+    tag = models.SlugField()
+    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
+    object_id = models.PositiveIntegerField()
+    content_object = GenericForeignKey("content_type", "object_id")
+
+    def __str__(self):
+        return self.tag
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["content_type", "object_id"]),
+        ]
+```

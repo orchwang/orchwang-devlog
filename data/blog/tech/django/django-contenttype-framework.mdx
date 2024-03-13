@@ -3,7 +3,7 @@ title: Django contenttypes Framework, Generic Relation 살펴보기
 date: '2024-3-11'
 tags: ['django', 'contenttypes']
 draft: true
-summary: 
+summary: Django 는 우리의 Django project 에 설치된 모든 모델을 추적할 수 있는 contenttypes 라는 고수준, 일반 인터페이스를 제공하는 어플래케이션이 포함한다. 그 핵심에는 `django.contrib.contenttypes.models.ContentType` 모델이 존재하는데 이는 우리 프로젝트에 설치된 모델에 대한 정보를 저장한다. 새로운 모델이 설치되면 새로운 ContentType 모델 레코드 또한 생성된다.
 images: []
 ---
 
@@ -44,6 +44,79 @@ ContentType 의 모든 instance 들은 함께 유니크 하게 기재된 모델�
 - name
   - 사람이 읽을 수 있는 content type. 모델 attribute 중 `verbose_name` 을 가져온다. verbose 는 `장황한` 이라는 뜻인데, 직관적으로 이해가 가능한 수준으로 설명한 이라는 뜻일 것이라 생각된다.
 
+# Methods on ContentType instances
+
+모든 ContenType 인스턴스는 가르키거나 그 모델에서 가져온 객체 혹은 어떠한 모델에 대한 ContentType instance 에서 비롯된 메소드를 가진다.
+
+## ContentType.get_object_for_this_type(**kwargs)
+
+ContentType 을 나타내는 모델을 위해 적절한 lookup arguments 를 취하며, 모델의 `get()` lookup 은 일치하는 객체를 반환한다.
+
+## ContentType.model_class()
+
+ContentType 을 나타내는 Model class 를 반환한다.
+
+예를 들어 우리는 User model 의 ContentType 을 참조 할 수 있다.
+
+```python
+>>> from django.contrib.contenttypes.models import ContentType
+>>> user_type = ContentType.objects.get(app_label="auth", model="user")
+>>> user_type
+<ContentType: user>
+```
+
+그리고 이것을 통해 특정 User 를 쿼리 하거나 User model class 에 접속할 수 있다.
+
+```python
+>>> user_type.model_class()
+<class 'django.contrib.auth.models.User'>
+>>> user_type.get_object_for_this_type(username="Guido")
+<User: Guido>
+```
+
+## get_object_for_this_type() 와 model_class() 가능하게 하는 매우 중요한 사례
+
+1. 위 2개의 메소드를 사용할 때, 우리는 설치된 어떠한 모델에 쿼리를 실행하는 고수준 제네릭 코드를 작성할 수 있다. 이는 단일 모델 클래스를 import 하여 사용하는 방식에 대비하여 런타임 시 app_label과 모델을 ContentType 반환 시 pass 시킬 수 있다. 
+2. 그리고 이것은 model class 를 사용하거나 이것에서 객체를 받아오는데 사용된다. 우리는 ContentType에 서로 다른 모델을 연결할 수 있는데 아래의 방식으로써 수행할 수 있다.
+    - 특정 모델 클래스의 인스턴스에 대한 형식을 정하거나 (typing instances) 
+    - 두 메소드를 모델 클래스에 접근하기 위해 사용하기 위해 사용한다.
+
+몇몇 번들된 Django 앱들의 경우 마지막 테크닉을 유용하게 한다. 예를 들어, Django authentication framework 의 permission 시스템의 경우 Permission model 을 ContentType ForeignKey 와 함께 사용한다. 이것은 Permission 이 "블로그 요소를 추가할 수 있음" 또는 "뉴스 스토리를 삭제할 수 있음" 과 같은 컨셉을 가능하게 한다.
+
+# ContentType Manager
+
+ContentType 은 또한 아래의 메소드가 포함된 custom manager, ContentTypeManager 를 가진다.
+
+## class ContentTypeManager
+
+### clear_cache()
+
+내부 캐시를 클리어하는것은 ContentType 이 ContentType 인스턴스에 의해 만들어진 models 추적에 사용한다. 아마 우리는 우리가 스스로 실행할 일은 없을 것이다. Django 는 필요할때 알아서 이 메소드를 실행한다.
+
+### get_for_id(id)
+
+ID 를 통해 ContentType 을 참조한다. 이 메소드는 동일한 공유된 캐시를 사용하는데, 이 메소드는 일반적으로는 ContentType.objects.get(pk=id) 메소드를 실행하는것이 더 선호된다.
+
+### get_for_model(model, for_concrete_model=True)
+
+모델 클래스나 모델 인스턴스를 취하고 모델이 나타내는 ContentType 인스턴스를 반환한다. `for_concrete_model=False` 는 proxy model 의 ContentType 을 fetch 하는것을 허용한다.
+
+### get_for_models(*models, for_concrete_models=True)
+
+다양한 수의 모델 클래스를 취하고 ContentType 인스턴스가 바라보는 모델 클래스의 딕셔너리 매핑을 반환한다. `for_concrete_models=False` 는 proxy models 의 ContentType 을 fetch 하는것을 허용한다.
+
+### get_by_natural_key(app_label, model)
+
+주어진 app_label, model 명에 의해 유일하게 식별 가능한(uniquely identified) ContentType 인스턴스를 반한한다. 이 메소드의 주된 목적은 ContentType 객체를 deserialization 시 natural key 에 의해 참조되도록 허용하는 것이다.
+
+우리가 ContentType 를 사용해야 할 때 임을 안다면 `get_for_model()` 메소드가 특히 유용할 수 있다. 하지만 수동 참조를 한다면 모델의 메타데이터를 획득하는데에 문제가 발생할 수 있다.
+
+```python
+>>> from django.contrib.auth.models import User
+>>> ContentType.objects.get_for_model(User)
+<ContentType: user>
+```
+
 # Generic Relation
 
 Content Type 에 대해 어느정도 이해했으니, 이제 [Generic Relation](https://docs.djangoproject.com/en/5.0/ref/contrib/contenttypes/#generic-relations) 을 살펴볼 때가 왔다.
@@ -72,3 +145,19 @@ class TaggedItem(models.Model):
             models.Index(fields=["content_type", "object_id"]),
         ]
 ```
+
+일반적인 ForeignKey 는 다른 모델을 가르킬(point to) 수 있다. 이것은 만약 TaggedItem 모델이 ForeignKey 로 사용되었을 때 단 하나뿐인 모델을 태그 저장을 위해 선택해야 한다는 것을 말한다. contenttypes 어플리케이션은 이와 같은 상황에서 작동하고 어떠한 모델과의 관계도 허용하는 GenericForeignKey 라는 특수한 필드를 제공한다.
+
+## class GenericForeignKey
+
+GenericForeignKey 는 아래의 3가지 설정을 가진다.
+
+1. 내가 사용하고자 하는 ForeignKey 에 ContentType 을 부여한다. 본 필드를 위한 일반적인 이름은 `content_type` 이다.
+2. 내가 작성하는 모델에 내가 연결하고자 하는 모델의 pk 를 저장할 수 있는 필드를 제공한다. 대다수의 모델에서 ㄱ이것은 PositiveIntegerField 이다. 일반적인 이름은 `object_id` 로 한다.
+3. 내가 작성하는 모델에 GenericForeignKey 를 부여하고 상기한 두 필드를 통과시킨다. ('content_type', 'object_id') 이것은 GenericForeignKey 의 일반적인 모습이 될 것이다.
+
+ForeignKey 와는 다르게 GenericForeignKey 에서는 database index 가 자동생성되지 않는다. 때문에 database index 가 필요하다면 `Meta.indexes` 를 활용하자. [이 부분은 미래에 변경될 소지](https://code.djangoproject.com/ticket/23435) 가 있다.
+
+### for concrete_model option
+
+위 옵션이 False 라면 해당 필드는 proxy models 로 참조될 수 있다. Default 는 True 이다. 이것은 get_for_model() 에 for_concrete_model argument 를 그대로 반영(mirror) 한다.

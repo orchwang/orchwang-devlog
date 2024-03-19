@@ -2,12 +2,42 @@
 title: Django contenttypes Framework, Generic Relation 살펴보기
 date: '2024-3-11'
 tags: ['django', 'contenttypes']
-draft: true
+draft: false
 summary: Django 는 우리의 Django project 에 설치된 모든 모델을 추적할 수 있는 contenttypes 라는 고수준, 일반 인터페이스를 제공하는 어플래케이션이 포함한다. 그 핵심에는 `django.contrib.contenttypes.models.ContentType` 모델이 존재하는데 이는 우리 프로젝트에 설치된 모델에 대한 정보를 저장한다. 새로운 모델이 설치되면 새로운 ContentType 모델 레코드 또한 생성된다.
 images: []
 ---
 
 # TL;DR
+
+Django 에는 `contenttype framework` 라는것이 존재한다. 사용하는 예시를 보면 Model 에 `ContentType` 이라는 djagno 에서 제공하는 model 에 대한 ForeignKey Field 를 정의하고 있다. 그냥 연결하고 싶은 모델에 ForeignKey 를 지정하지 않고 왜 ContentType 이라는 것을 통해 연결하는 것일까?
+
+```python
+class TaggedItem(models.Model):
+    tag = models.SlugField()
+    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
+    object_id = models.PositiveIntegerField()
+    content_object = GenericForeignKey("content_type", "object_id")
+```
+
+## contenttype framework 를 사용하는 이유
+
+1. 다형성 지원
+    - ContentType Framework를 사용하면 모델 간의 관계를 유연하게 설정할 수 있습니다. 
+    - 예를 들어, 한 모델에서 다른 모델로의 외부 키 관계를 설정할 때 실제 모델의 이름을 직접 사용하는 대신 ContentType을 사용하여 모델 간의 관계를 지정할 수 있습니다. 
+    - 이를 통해 모델의 유형을 동적으로 변경할 수 있으며, 다형성을 구현할 수 있습니다.
+2. 데이터베이스의 결합을 피하기
+    - ContentType Framework를 사용하면 애플리케이션의 다른 부분 간의 강력한 결합을 피할 수 있습니다. 
+    - 모델이나 뷰 등에서 직접적으로 모델 이름을 사용하는 대신 ContentType을 통해 모델에 접근하면 데이터베이스 스키마의 변경이나 모델의 변경에 더 유연하게 대응할 수 있습니다.
+3. 동적 쿼리 및 검색
+    - ContentType을 사용하면 애플리케이션에서 동적으로 쿼리를 작성하고 데이터를 검색할 수 있습니다. 
+    - 예를 들어, 특정 모델 유형의 모든 객체를 검색하거나 특정 모델과 연관된 객체를 찾는 등의 작업을 수행할 수 있습니다.
+4. 관리자 패널에서의 활용
+    - ContentType Framework는 Django의 관리자 패널에서 모델 간의 관계를 관리하는 데 도움을 줍니다. 
+    - 관리자 패널을 사용하여 다른 모델과의 관계를 설정하고 관리할 때 ContentType을 사용하여 모델을 동적으로 선택할 수 있습니다.
+
+한마디로 말하면 contenttype framework 는 Django 의 model 간 관계에 유연성과 확장성을 향상시켜준다고 할 수 있다. 공식 문서에서는 이를 어떻게 안내하고 있는지 확인해보자
+
+## Overview in Django Documentation
 
 > Django includes a contenttypes application that can track all of the models installed in your Django-powered project, providing a high-level, generic interface for working with your models.
 
@@ -161,3 +191,42 @@ ForeignKey 와는 다르게 GenericForeignKey 에서는 database index 가 자�
 ### for concrete_model option
 
 위 옵션이 False 라면 해당 필드는 proxy models 로 참조될 수 있다. Default 는 True 이다. 이것은 get_for_model() 에 for_concrete_model argument 를 그대로 반영(mirror) 한다.
+
+1. Primary key 타잎 호환성
+    - "object_id" 필드는 pk 로서 동일한 타잎 일 필요는 없으나, 그들의 pk 값들은 `get_db_prep_value()` 메소드에 의해 "object_id" 필드로서 반드시 강제될 수 있다.
+    - 예를 들어, 우리가 모델에 IntegerField 나 CharField 로 이루어진 pk 와 함께 generic 한 관계를 허용하고자 한다면, integer 가 `get_db_prep_value()` 에 의해 string 으로 강제된 상황에서 우리의 모델에 "object_id" 필드에 CharField 를 사용할 수 있다.
+    - 유연성을 최대치로 적용하기 위해서 우리는 최대 길이가 설정되지 않은 TextField 를 우리의 database 에 사용할 수 있지만, 이것은 우리의 database 시스템에 따라 심각한 성능 저하를 야기할 수 있다.
+    - 어떤 타잎의 필드가 최선인지에 대해서는 만능(one-size-fits-all) 솔루션은 없다. 우리는 우리가 어떤 모델을 가르키길 기대하는지, 그리고 어떠한 솔루션이 우리 유즈케이스에 가장 효과적인지 직접 판별해야 한다.
+2. ContentType 객체에 참조를 serialize 하기
+    - 만약 우리가 데이터를 generic relation 을 포함하는 모델로부터 serializing (예를들어 fixture 를 만들 때) 한다면 우리는 반드시 단일(unique) 관계륵 가지는 ContentType 객체로 natural key 를 사용할 것이다.
+    - [natural keys](https://docs.djangoproject.com/en/5.0/topics/serialization/#topics-serialization-natural-keys) 에서 dumpdata-natural-foreign 를 살펴보자.
+
+이것은 일반 ForeignKey 에 사용된 것과 유사한 API 를 사용 가능하게 한다. 개별 TaggedItem 은 각각 관계를 가지는 객체를 리턴하는 content_object 를 가지게 될것이다. 그리고 우리는 그 필드에 등록할 수 있게 되거나 이것이 TaggedItem 을 생성할 때 사용하게 될 것이다.
+
+```
+>>> from django.contrib.auth.models import User
+>>> guido = User.objects.get(username="Guido")
+>>> t = TaggedItem(content_object=guido, tag="bdfl")
+>>> t.save()
+>>> t.content_object
+<User: Guido>
+```
+
+만약 관계된 객체가 삭제된다면, content_type 과 object_id 필드는 원본 값에 대한 구성과 None 을 반환하는 GenericForeignKey 를 남기게 된다.
+
+```
+>>> guido.delete()
+>>> t.content_object  # returns None
+```
+
+GenericForeignKey 가 포함된것에 대하여 우리는 filter, exclude 와 같은 필터를 이러한 필드에 직접 database API 를 통해 사용할 수 없다. 왜냐하면 GenericForeignKey 는 일반적인 필드 오브젝트가 아니기 때문에며 아래의 예시처럼 사용할 수 없다.
+
+```
+# This will fail
+>>> TaggedItem.objects.filter(content_object=guido)
+# This will also fail
+>>> TaggedItem.objects.get(content_object=guido)
+```
+
+마찬가지로, GenericForeignKeys 는 ModelForms 에 나타나지 않는다.
+

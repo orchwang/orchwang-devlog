@@ -3,56 +3,6 @@ title: Django 에서 deconstruct 는 왜 사용하는 걸까?
 date: '2024-3-29'
 tags: ['django']
 draft: true
-summary: 우선 deconstruct 를 왜 사용하는지 찾아보면 클래스 등을 직력화하기 위해서 라고 합니다. (구조화된 클래스를 분해(deconstruct) 하여 직렬화) 아래는 Custom Validation 에 deconstructible 을 활용한 부분 입니다.
+summary: 우선 deconstruct 를 왜 사용하는지 찾아보면 클래스 등을 직렬화하기 위해서 라고 합니다.
 images: []
 ---
-
-# 궁금해서 찾아본 deconstructible 을 왜 사용했는가.
- 
-우선 deconstruct 를 왜 사용하는지 찾아보면 클래스 등을 직력화하기 위해서 라고 합니다. (구조화된 클래스를 분해(deconstruct) 하여 직렬화) 아래는 Custom Validation 에 deconstructible 을 활용한 부분 입니다.
- 
-synapse-backend : apps/integration/validators.py
-@deconstructible
-class PluginMetaValidator:
- 
-def __call__(self, service, meta):
-    serializer_class = self.serializer_classes.get(service)
- 
-위 validator 클래스의 __call__ 메소드는 service, meta 인자를 받습니다. 이는 Plugin 모델에서 호출된 위 validator 코드를 보면 알 수 있는데요, Plugin 의 service, meta 필드를 넘깁니다.
-
-
-def clean(self):
-    if self.service:
-        validate_plugin_meta(self.service, self.meta)
- 
-그리고 이 값들을 활용해 별도로 불러온 시리얼라이저로 validation 을 실시합니다.
-
-
-def __call__(self, service, meta):
-    serializer_class = self.serializer_classes.get(service)
-    if serializer_class:
-        serializer = serializer_class(data=meta)
-        if not serializer.is_valid():
-            raise ValidationError({'meta': self.errors_to_message(serializer.errors)})
- 
-여기까지는 deconstructible 과 관련이 없습니다. 중요한 부분은 model.clean 에 사용되었다는 점 입니다. 우선 살펴봐야 할 부분은 대부분의 model Field 클래스 들은 deconstruct 메소드를 기본적으로 가지고 있습니다. 아래는 URLField 의 deconstruct 입니다.
-
-
-def deconstruct(self):
-    name, path, args, kwargs = super().deconstruct()
-    if self.db_collation:
-        kwargs["db_collation"] = self.db_collation
-    return name, path, args, kwargs
- 
-deconstruct 해서 가져온 값을 활용 (예시에선 db_collation 을 kwargs에 추가) 하고 있죠? 이렇듯 model validate 은 deconstruct 가 가능해야 합니다. 그렇기 때문에 custom 구현되어 있는 PluginMetaValidator 도 deconstruct 를 가능하게 해야 validator 가 작동하게 됩니다.
-
-
-@deconstructible
-class PluginMetaValidator:
- 
-deconstructible 데코레이터의 내부를 살펴보면 deconstruct 메소드를 강제로 심어주고 있는것으로 볼 수 있습니다. 사실 커스텀 validator 를 작성하고 __call__() 에서 validation 을 수행하도록 한 뒤 deconstruct 하도록 하는 부분은 공식문서에서 살펴볼 수 있습니다.
-https://docs.djangoproject.com/en/5.0/ref/validators/#writing-validators
- 
-You can also use a class with a __call__() method for more complex or configurable validators. RegexValidator, for example, uses this technique. If a class-based validator is used in the validators model field option, you should make sure it is serializable by the migration framework by adding deconstruct() and __eq__() methods.
- 
-흠.. 이런 기능들을 어떻게 알고 작성할 수 있었는지.. 놀랍습니다 ㅎ

@@ -135,11 +135,11 @@ export default makeSource({
   mdx: {
     cwd: process.cwd(),
     remarkPlugins: [
-      remarkExtractFrontmatter,
+      remarkExtractFrontmatter as any,
       remarkGfm,
-      remarkCodeTitles,
+      remarkCodeTitles as any,
       remarkMath,
-      remarkImgToJsx,
+      remarkImgToJsx as any,
     ],
     rehypePlugins: [
       rehypeSlug,

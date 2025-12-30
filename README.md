@@ -41,9 +41,7 @@ yarn serve
 data/blog/
 ├── career/      # 커리어 & 역량 관리
 ├── python/      # Python 기술 심화
-├── diary/       # 개인 회고
-├── planning/    # 목표 & 계획
-└── book/        # 독서 & 서평
+└── diary/       # 개인 회고
 ```
 
 ## 📋 Documentation
@@ -55,7 +53,7 @@ data/blog/
 ## 🔗 Key Resources
 
 - **Technical Competencies**: [`technical-competencies-for-python-engineer.mdx`](./data/blog/career/technical-competencies-for-python-engineer.mdx)
-- **Job Description**: [`python-engineer-job-description.mdx`](./data/blog/career/python-engineer-job-description.mdx)
+- **Job Description**: [`python-engineer-job-description.mdx`](./data/blog/python/python-engineer-job-description.mdx)
 - **Python Curriculum**: [`python-overall-curriculum.mdx`](./data/blog/python/python-overall-curriculum.mdx)
 
 ## 📝 License
